@@ -1,0 +1,30 @@
+{
+  "name": "opencode-smart-fallback",
+  "version": "1.0.0",
+  "description": "Modality-aware automatic model fallback for OpenCode - switches to compatible models on rate limits, quota exhaustion, and other transient errors",
+  "main": "smart-fallback.ts",
+  "types": "smart-fallback.ts",
+  "scripts": {
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "fallback",
+    "model",
+    "rate-limit",
+    "quota",
+    "modality-aware"
+  ],
+  "author": "Javad Hamed <javadhamed@gmail.com>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*",
+    "@opencode-ai/sdk": "*",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
