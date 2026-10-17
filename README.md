@@ -206,4 +206,9 @@ MIT License - see LICENSE file for details.
 
 ## Author
 
-Javad Hamed (javadhamed@gmail.com)
+Javad Hamed (javadhamed@gmail.com)---
+
+â­گ **If you found this project useful, please give it a star!** It helps others discover it and motivates continued development.
+
+â­گ **ط§ع¯ط± ط§غŒظ† ظ¾ط±ظˆعکظ‡ ط¨ط±ط§غŒطھط§ظ† ظ…ظپغŒط¯ ط¨ظˆط¯طŒ ظ„ط·ظپط§ظ‹ ط¨ظ‡ ط¢ظ† ط³طھط§ط±ظ‡ (Star) ط¨ط¯ظ‡غŒط¯!** ط§غŒظ† ع©ط§ط± ط¨ظ‡ ط¯غŒع¯ط±ط§ظ† ط¯ط± ع©ط´ظپ ظ¾ط±ظˆعکظ‡ ع©ظ…ع© ظ…غŒâ€Œع©ظ†ط¯ ظˆ ط§ظ†ع¯غŒط²ظ‡ظ” طھظˆط³ط¹ظ‡ظ” ط¨غŒط´طھط± ط±ط§ ظپط±ط§ظ‡ظ… ظ…غŒâ€Œط¢ظˆط±ط¯.
+
