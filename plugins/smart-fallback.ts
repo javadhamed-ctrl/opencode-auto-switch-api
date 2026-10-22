@@ -1,4 +1,4 @@
-import type { Plugin, PluginInput, Config, Hooks } from "@opencode-ai/plugin"
+import type { PluginInput, Hooks } from "@opencode-ai/plugin"
 import type { Event, Session, Message, UserMessage, AssistantMessage, Part } from "@opencode-ai/sdk"
 import { z } from "zod"
 import * as fs from "fs"
@@ -140,43 +140,79 @@ function modelMatchesCaps(modelCaps: ModelCapabilities, required: ModelCapabilit
 
 // ─── Config discovery ────────────────────────────────────────────────────────
 
-function findOpencodeConfig(): string | null {
+function findOpencodeConfigs(): string[] {
   const candidates = [
     path.join(os.homedir(), ".config", "opencode", "opencode.jsonc"),
-    path.join(process.cwd(), "opencode.jsonc"),
     path.join(os.homedir(), ".config", "opencode", "opencode.json"),
+    path.join(process.cwd(), "opencode.jsonc"),
     path.join(process.cwd(), "opencode.json"),
   ]
-  for (const c of candidates) { if (fs.existsSync(c)) return c }
-  return null
+  const seen = new Set<string>()
+  const found: string[] = []
+  for (const c of candidates) {
+    if (seen.has(c) || !fs.existsSync(c)) continue
+    seen.add(c)
+    found.push(c)
+  }
+  return found
 }
 
-function stripJSONCComments(jsonc: string): string {
-  return jsonc
-    .replace(/"(?:[^"\\]|\\.)*"/g, match => match)
-    .replace(/\/\/.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
+function stripJSONCComments(src: string): string {
+  let out = ""
+  let inString = false
+  let escape = false
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]
+    if (inString) {
+      out += c
+      if (escape) escape = false
+      else if (c === "\\") escape = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') { inString = true; out += c; continue }
+    if (c === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") i++
+      out += "\n"
+      continue
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      i += 2
+      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++
+      i++
+      continue
+    }
+    out += c
+  }
+  return out
 }
 
 function discoverProviders(): ProviderEntry[] {
-  const configPath = findOpencodeConfig()
-  if (!configPath) return []
-  try {
-    const raw = stripJSONCComments(fs.readFileSync(configPath, "utf-8"))
-    const cfg = JSON.parse(raw) as Record<string, any>
-    const providers: ProviderEntry[] = []
-    for (const [id, provider] of Object.entries(cfg.provider || {})) {
-      const p = provider as Record<string, any>
-      const models = Object.entries(p.models || {}).map(([mid, m]: [string, any]) => ({
-        id: mid, name: m?.name ?? mid,
-      }))
-      providers.push({ id, name: p.name ?? id, baseURL: p.options?.baseURL ?? "", models })
+  const configPaths = findOpencodeConfigs()
+  if (configPaths.length === 0) return []
+  const byId = new Map<string, ProviderEntry>()
+  for (const configPath of configPaths) {
+    try {
+      const raw = stripJSONCComments(fs.readFileSync(configPath, "utf-8"))
+      const cfg = JSON.parse(raw) as Record<string, any>
+      for (const [id, provider] of Object.entries(cfg.provider || {})) {
+        const p = provider as Record<string, any>
+        const models = Object.entries(p.models || {}).map(([mid, m]: [string, any]) => ({
+          id: mid, name: m?.name ?? mid,
+        }))
+        const existing = byId.get(id)
+        if (existing) {
+          const known = new Set(existing.models.map(m => m.id))
+          for (const m of models) if (!known.has(m.id)) existing.models.push(m)
+        } else {
+          byId.set(id, { id, name: p.name ?? id, baseURL: p.options?.baseURL ?? "", models })
+        }
+      }
+    } catch (e) {
+      console.error("[auto-switch] Config parse error:", e)
     }
-    return providers
-  } catch (e) {
-    console.error("[auto-switch] Config parse error:", e)
-    return []
   }
+  return [...byId.values()]
 }
 
 function buildModelRegistry(providers: ProviderEntry[]): ModelEntry[] {
@@ -350,6 +386,16 @@ export default async function autoSwitchPlugin(
           .map((p: any) => ({ type: "text" as const, text: p.text }))
           ?? []
         await client.session.revert({ path: { id: sessionID }, body: { messageID: um.info.id } })
+        try {
+          if ((client.session as any)?.update) {
+            await (client.session as any).update({ path: { id: sessionID }, body: { model: { providerID: next.providerID, modelID: next.modelID } } })
+          }
+        } catch {}
+        try {
+          if ((client as any).tui?.publish) {
+            await (client as any).tui.publish({ body: { type: "session.model.change", properties: { sessionID, providerID: next.providerID, modelID: next.modelID } } })
+          }
+        } catch {}
         await client.session.prompt({
           path: { id: sessionID },
           body: { model: { providerID: next.providerID, modelID: next.modelID }, parts },
@@ -372,6 +418,16 @@ export default async function autoSwitchPlugin(
     const st = getErrorState(ss.originalModel, errorStates)
     if (st.cooldownUntil <= Date.now() && !st.circuitOpen) {
       try {
+        try {
+          if ((client.session as any)?.update) {
+            await (client.session as any).update({ path: { id: sessionID }, body: { model: { providerID: provID, modelID } } })
+          }
+        } catch {}
+        try {
+          if ((client as any).tui?.publish) {
+            await (client as any).tui.publish({ body: { type: "session.model.change", properties: { sessionID, providerID: provID, modelID } } })
+          }
+        } catch {}
         await client.session.prompt({
           path: { id: sessionID },
           body: { model: { providerID: provID, modelID }, parts: [] },
@@ -428,11 +484,6 @@ export default async function autoSwitchPlugin(
       if (!providerID || !modelID) return
 
       await triggerSwitch(sessionID, agentName, error, providerID, modelID)
-    },
-
-    async config(cfg: Config) {
-      if (!cfg.plugin) cfg.plugin = []
-      cfg.plugin.push(["auto-switch-api", opts])
     },
 
     tool: {
